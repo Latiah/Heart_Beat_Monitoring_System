@@ -12,7 +12,7 @@ here — the filenames below are the ones the README expects.
 | `anomaly_summary.png` | Status breakdown and per-customer anomaly rates | `make psql`, then `\i sql/queries/anomaly_summary.sql` |
 | `unit_tests.png` | Passing unit tests | `make test-unit` |
 | `integration_tests.png` | Passing integration tests | `make test-integration` |
-| `dashboard.png` | The Streamlit dashboard with live data | `make dashboard` |
+| `grafana_dashboard.png` | The Grafana dashboard with live data | <http://localhost:3000> |
 
 Tip: leave the producer running for a minute or two before the screenshots so
 the tables and charts have enough data — and enough anomalies — to be worth

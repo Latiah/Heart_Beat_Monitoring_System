@@ -39,7 +39,7 @@ flowchart LR
 
     subgraph OUT["Consumption"]
         H["SQL queries<br/><i>sql/queries/</i>"]
-        I["Streamlit dashboard<br/><i>dashboard/</i>"]
+        I["Grafana dashboard<br/><i>grafana/provisioning/</i>"]
     end
 
     A --> B --> C --> D --> E
@@ -199,12 +199,22 @@ both the current standard and one less container to keep healthy locally. The
 trade-off is that older Kafka tutorials showing `zookeeper:2181` will not
 match this compose file.
 
-### Why the dashboard is read-only and decoupled
+### Why Grafana, and why it is provisioned as code
 
-`dashboard/app.py` imports no producer or consumer code and issues only
-SELECTs. A dashboard able to write to the pipeline's table could corrupt the
-data it exists to observe, and a crash in the view must never be able to stop
-ingestion.
+Grafana reads PostgreSQL directly. It shares no code with the pipeline, runs in
+its own container, and issues only SELECTs — so it cannot corrupt the data it
+exists to observe, and a crash in the dashboard can never stop ingestion.
+
+Both the datasource and the dashboard are provisioned from files in
+`grafana/provisioning/`, never configured by clicking through the UI. That is
+what makes the dashboard reproducible: it is version-controlled, reviewable in
+a diff, identical on every machine, and it survives `docker compose down -v`. A
+dashboard that exists only inside a Grafana volume is undeployable and
+unreviewable — and it disappears the first time someone resets their stack.
+
+The datasource points at `postgres:5432`, deliberately *not* `$POSTGRES_PORT`.
+That variable is the host port mapping, which can be remapped to dodge a local
+conflict; inside the compose network Postgres is always on 5432.
 
 ### Trade-offs accepted
 

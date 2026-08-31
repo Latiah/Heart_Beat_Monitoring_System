@@ -1,7 +1,7 @@
 # Developer entrypoints for the Heart Beat Monitoring System.
 
-.PHONY: help install up down clean logs db-init db-reset psql \
-        run-generator run-producer run-consumer dashboard \
+.PHONY: install up down clean logs db-init db-reset psql \
+        run-generator run-producer run-consumer grafana \
         test test-unit test-integration lint format
 
 PG_CONTAINER ?= heartbeat-postgres
@@ -13,7 +13,7 @@ KAFKA_CONTAINER ?= heartbeat-kafka
 # additionally guarantees the tool comes from the same interpreter as the
 # package under test. Override with `make PYTHON=.venv/bin/python <target>`.
 PYTHON ?= python
-LINT_PATHS ?= src scripts tests dashboard
+LINT_PATHS ?= src scripts tests
 
 # Load .env first so db-init/psql target the same database the app and
 # docker-compose do. Deriving PG_USER/PG_DB from POSTGRES_* below (rather
@@ -28,8 +28,8 @@ PG_USER ?= $(if $(POSTGRES_USER),$(POSTGRES_USER),heartbeat_user)
 PG_DB   ?= $(if $(POSTGRES_DB),$(POSTGRES_DB),heartbeat_monitoring)
 
 
-install:  ## Install the package (editable) plus dev and dashboard extras
-	$(PYTHON) -m pip install -e ".[dev,dashboard]"
+install:  ## Install the package (editable) plus dev extras
+	$(PYTHON) -m pip install -e ".[dev]"
 
 up:  ## Start Kafka and PostgreSQL, waiting until both are healthy
 	docker compose up -d --wait
@@ -68,8 +68,9 @@ run-producer:  ## Generate and publish events to Kafka
 run-consumer:  ## Consume, validate, classify, and persist to PostgreSQL
 	$(PYTHON) scripts/run_consumer.py
 
-dashboard:  ## Launch the Streamlit dashboard
-	$(PYTHON) -m streamlit run dashboard/app.py
+grafana:  ## Print the Grafana dashboard URL (it runs as part of `make up`)
+	@echo "Grafana dashboard: http://localhost:$(or $(GRAFANA_PORT),3000)"
+	@echo "No login required. Datasource and dashboard are provisioned from ./grafana."
 
 test-unit:  ## Fast tests, no infrastructure required
 	$(PYTHON) -m pytest tests/unit -m "not integration" -v
