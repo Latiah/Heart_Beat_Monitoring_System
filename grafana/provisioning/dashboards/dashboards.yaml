@@ -1,0 +1,18 @@
+# Tells Grafana to load dashboard JSON from disk on startup.
+
+apiVersion: 1
+
+providers:
+  - name: Heartbeat Monitoring
+    orgId: 1
+    folder: ""
+    type: file
+    # allowUiUpdates lets you tweak panels in the browser to experiment.
+    # Those edits live only in Grafana's own database -- to keep a change,
+    # use the dashboard's Export > "Save to file" and commit the JSON.
+    allowUiUpdates: true
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

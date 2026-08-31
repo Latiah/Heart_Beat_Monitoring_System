@@ -1,79 +1,119 @@
-version: "3.8"
+# Local infrastructure for the Heart Beat Monitoring System.
+#
+# Kafka runs in KRaft mode (no Zookeeper). Zookeeper has been removed from
+# Kafka as of 4.0, so a single-broker KRaft setup is both the modern default
+# and one less container to keep healthy for a local demo.
+#
+# Bring up with `make up`, tear down with `make down`
+# (or `make clean` to also drop the Postgres volume).
 
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   kafka:
     image: confluentinc/cp-kafka:7.6.0
-    container_name: kafka
-    depends_on:
-      - zookeeper
+    container_name: heartbeat-kafka
     ports:
       - "9092:9092"
-      - "29092:29092"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Two listeners: one for other containers (kafka:9092), one for your host machine (localhost:29092)
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      # --- KRaft: this node is both broker and controller ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+      # Three listeners: host clients (9092), inter-container (29092),
+      # and the KRaft controller (29093).
+      KAFKA_LISTENERS: PLAINTEXT_HOST://0.0.0.0:9092,PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:9092,PLAINTEXT://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Single-broker cluster: replication factor must be 1 or internal
+      # topics fail to create.
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:29092", "--list"]
       interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 20s
 
   postgres:
     image: postgres:16-alpine
-    container_name: postgres
-    environment:
-      POSTGRES_USER:  ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DATABASE}
+    container_name: heartbeat-postgres
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # init.sql runs on first boot; schema/ and indexes/ are mounted
+      # alongside it because init.sql \i-includes them by absolute path.
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./sql/schema:/docker-entrypoint-initdb.d/schema:ro
+      - ./sql/indexes:/docker-entrypoint-initdb.d/indexes:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DATABASE}"]
+      test:
+        ["CMD-SHELL",
+         "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
-
+      start_period: 10s
+      
   adminer:
     image: adminer:latest
-    container_name: adminer
+    container_name: heartbeat-adminer
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
 
-  # Optional: uncomment to add Grafana for dashboards (point its Postgres
-  # data source at host=postgres, db=heartbeat_db, user=hbuser, pass=hbpassword)
+  # Dashboard at http://localhost:3000 — no login, no manual setup.
+  # The datasource and dashboard are both provisioned from ./grafana, so a
+  # fresh clone gets the same dashboard as everyone else.
   grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
+    image: grafana/grafana:11.3.0
+    container_name: heartbeat-grafana
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      # Passed through so the provisioned datasource can interpolate them,
+      # keeping .env the single definition of the database credentials.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Anonymous admin access: this is a local demo stack with synthetic data
+      # and no network exposure. Do not carry this setting to a real deployment.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # Land on the heartbeat dashboard instead of an empty home page.
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/heartbeat_monitoring.json
+      GF_LOG_LEVEL: warn
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
 volumes:
   pgdata:
+  grafana-data:

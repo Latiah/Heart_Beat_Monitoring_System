@@ -1,0 +1,373 @@
+{
+  "uid": "heartbeat-monitoring",
+  "title": "Heart Beat Monitoring",
+  "description": "Real-time customer heart-rate monitoring. Anomaly thresholds are simulation business rules, not medical diagnoses.",
+  "tags": ["heartbeat", "kafka", "postgres"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "customer",
+        "label": "Customer",
+        "type": "query",
+        "datasource": {
+          "type": "postgres",
+          "uid": "heartbeat-postgres"
+        },
+        "query": "SELECT DISTINCT customer_id FROM heart_rate_readings ORDER BY customer_id",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": ["All"],
+          "value": ["$__all"]
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Readings in window",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "text" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Readings\"\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active customers",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(DISTINCT customer_id) AS \"Customers\"\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Anomalies",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE is_anomaly) AS \"Anomalies\"\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Anomaly rate",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 25 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE is_anomaly) / NULLIF(COUNT(*), 0), 2) AS \"Rate\"\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Heart rate over time",
+      "description": "One series per customer. Dashed bands mark the configured LOW (50) and HIGH (120) classification thresholds.",
+      "gridPos": { "h": 11, "w": 18, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bpm",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "auto",
+            "pointSize": 4,
+            "spanNulls": true,
+            "axisLabel": "bpm"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "orange", "value": 120 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  reading_time AS \"time\",\n  customer_id AS metric,\n  heart_rate AS value\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})\nORDER BY reading_time"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "piechart",
+      "title": "Readings by status",
+      "gridPos": { "h": 11, "w": 6, "x": 18, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "NORMAL" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "LOW" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "HIGH" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "pieType": "donut",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  status,\n  COUNT(*) AS reading_count\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})\nGROUP BY status"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Anomalies over time",
+      "description": "Count of LOW and HIGH readings per interval bucket.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "stacking": { "mode": "normal", "group": "A" },
+            "axisLabel": "anomalies"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "LOW" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "HIGH" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  $__timeGroupAlias(reading_time, $__interval),\n  status AS metric,\n  COUNT(*) AS value\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND is_anomaly\n  AND customer_id IN (${customer:sqlstring})\nGROUP BY 1, status\nORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Anomaly rate by customer",
+      "description": "Spots a customer whose feed is unusually unstable.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 25 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  customer_id,\n  ROUND(100.0 * COUNT(*) FILTER (WHERE is_anomaly) / NULLIF(COUNT(*), 0), 2) AS anomaly_rate\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND customer_id IN (${customer:sqlstring})\nGROUP BY customer_id\nORDER BY anomaly_rate DESC NULLS LAST"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Recent anomalies",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "postgres", "uid": "heartbeat-postgres" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Status" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "LOW": { "color": "blue", "index": 0 } } },
+                  { "type": "value", "options": { "HIGH": { "color": "red", "index": 1 } } }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "BPM" },
+            "properties": [{ "id": "unit", "value": "bpm" }]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Time", "desc": true }]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  reading_time AS \"Time\",\n  customer_id AS \"Customer\",\n  heart_rate AS \"BPM\",\n  status AS \"Status\"\nFROM heart_rate_readings\nWHERE $__timeFilter(reading_time)\n  AND is_anomaly\n  AND customer_id IN (${customer:sqlstring})\nORDER BY reading_time DESC\nLIMIT 100"
+        }
+      ]
+    }
+  ]
+}

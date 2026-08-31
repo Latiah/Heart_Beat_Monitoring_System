@@ -1,0 +1,35 @@
+# Grafana datasource, provisioned as code.
+#
+# Provisioning rather than clicking through the UI is the whole point: the
+# datasource is version-controlled, identical on every machine, and survives
+# `docker compose down -v`. Nothing about the dashboard depends on manual setup.
+#
+# Credentials are interpolated from the Grafana container's environment (see
+# docker-compose.yml), which reads them from the same .env as the app -- so
+# there is still exactly one place the database credentials are defined.
+
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQL
+    # Fixed uid so the provisioned dashboard JSON can reference this datasource
+    # by name-independent id. Changing it breaks every panel.
+    uid: heartbeat-postgres
+    type: postgres
+    access: proxy
+    # Container-internal address. Deliberately NOT $POSTGRES_PORT: that
+    # variable is the *host* port mapping, which can be remapped to avoid a
+    # local conflict. Inside the compose network Postgres is always on 5432.
+    url: postgres:5432
+    user: $POSTGRES_USER
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    isDefault: true
+    # Edits made in the UI are discarded on restart, which keeps the file the
+    # single source of truth rather than letting the two drift.
+    editable: false
