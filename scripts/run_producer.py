@@ -53,6 +53,14 @@ def main() -> int:
         client_id=settings.kafka_client_id,
     )
 
+    # Confirm the broker is up before the first send. Producing into a broker
+    # that is still starting can fatally desynchronise an idempotent producer.
+    try:
+        producer.wait_until_ready()
+    except RuntimeError as exc:
+        logger.error("%s", exc)
+        return 1
+
     logger.info(
         "Producer started (customers=%d, interval=%ss, topic=%s)",
         len(customer_ids),

@@ -1,9 +1,5 @@
 # Local infrastructure for the Heart Beat Monitoring System.
-#
-# Kafka runs in KRaft mode (no Zookeeper). Zookeeper has been removed from
-# Kafka as of 4.0, so a single-broker KRaft setup is both the modern default
-# and one less container to keep healthy for a local demo.
-#
+
 # Bring up with `make up`, tear down with `make down`
 # (or `make clean` to also drop the Postgres volume).
 
